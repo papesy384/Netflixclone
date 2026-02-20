@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 
-const ReactPlayer = dynamic(() => import("react-player/lazy"), { ssr: false });
+const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 
 const BROADCAST_EVENT = "playback";
 
@@ -31,7 +31,8 @@ function getOrCreateClientId(): string {
 }
 
 export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayerProps) {
-  const playerRef = useRef<import("react-player").default>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const playerRef = useRef<any>(null);
   const clientIdRef = useRef<string>("");
   const currentTimeRef = useRef(0);
   const isHostRef = useRef(false);
@@ -193,6 +194,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         onReady={handleReady}
         onPlay={handlePlay}
         onPause={handlePause}
+        // @ts-expect-error react-player types extend HTMLVideoElement; onProgress actually receives { playedSeconds }
         onProgress={handleProgress}
         onSeeked={handleSeeked}
       />

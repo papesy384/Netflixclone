@@ -11,8 +11,6 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-netflix-red: var(--netflix-red);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
 body {
