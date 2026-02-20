@@ -36,7 +36,8 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const clientIdRef = useRef<string>("");
   const currentTimeRef = useRef(0);
   const isHostRef = useRef(false);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const channelRef = useRef<any>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
@@ -51,6 +52,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
   const broadcastPlayback = useCallback(
     async (is_playing: boolean, last_timestamp: number) => {
+      if (!supabase) return;
       const channel = channelRef.current;
       if (!channel || !isHostRef.current) return;
 
@@ -78,11 +80,16 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
   // Fetch room state and subscribe to broadcast
   useEffect(() => {
+    const client = supabase;
+    if (!client) {
+      setInitialSyncDone(true);
+      return;
+    }
     let mounted = true;
     const clientId = clientIdRef.current;
 
     const run = async () => {
-      const { data: room, error } = await supabase
+      const { data: room, error } = await client
         .from("rooms")
         .select("is_playing, last_timestamp, host_id")
         .eq("id", roomId)
@@ -98,7 +105,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
       let isHost = false;
       if (!room) {
-        const { error: insertError } = await supabase.from("rooms").insert({
+        const { error: insertError } = await client.from("rooms").insert({
           id: roomId,
           video_id: "",
           is_playing: false,
@@ -117,7 +124,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       isHostRef.current = isHost;
       setInitialSyncDone(true);
 
-      const channel = supabase.channel(`room:${roomId}`);
+      const channel = client.channel(`room:${roomId}`);
       channelRef.current = channel;
 
       channel
@@ -183,6 +190,12 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
   return (
     <div className={`relative aspect-video w-full bg-black ${className}`}>
+      {!supabase && (
+        <div className="absolute left-0 right-0 top-0 z-10 bg-amber-500/90 px-3 py-2 text-center text-sm text-black">
+          Add <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+          <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel to enable sync.
+        </div>
+      )}
       <ReactPlayer
         ref={playerRef}
         url={url}
