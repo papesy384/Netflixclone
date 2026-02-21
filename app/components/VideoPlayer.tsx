@@ -51,6 +51,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const isHostRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const channelRef = useRef<any>(null);
+  const roomsChannelRef = useRef<{ unsubscribe: () => void } | null>(null);
 
   const [effectiveUrl, setEffectiveUrl] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -156,10 +157,11 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
       let isHost = false;
       const videoIdFromUrl = getYouTubeId(url);
+      const videoIdOrUrl = videoIdFromUrl ?? url; // Store full URL for direct videos
       if (!room) {
         const { error: insertError } = await client.from("rooms").insert({
           id: roomId,
-          video_id: videoIdFromUrl ?? "",
+          video_id: videoIdOrUrl,
           is_playing: false,
           last_timestamp: 0,
           host_id: clientId,
@@ -174,11 +176,12 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         });
         const roomVideoId = (room as { video_id?: string }).video_id;
         if (roomVideoId) {
-          setEffectiveUrl(`https://www.youtube.com/watch?v=${roomVideoId}`);
-        } else if (videoIdFromUrl) {
+          const resolvedUrl = roomVideoId.startsWith("http") ? roomVideoId : `https://www.youtube.com/watch?v=${roomVideoId}`;
+          setEffectiveUrl(resolvedUrl);
+        } else {
           await client
             .from("rooms")
-            .update({ video_id: videoIdFromUrl })
+            .update({ video_id: videoIdOrUrl })
             .eq("id", roomId);
         }
       }
@@ -206,6 +209,28 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         .subscribe((status) => {
           if (status === "SUBSCRIBED" && !mounted) return;
         });
+
+      const roomsChannel = client
+        .channel(`rooms-changes:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
+          (payload) => {
+            if (!mounted) return;
+            const newRow = payload.new as { is_playing?: boolean; last_timestamp?: number };
+            if (newRow?.is_playing !== undefined || newRow?.last_timestamp !== undefined) {
+              isRemoteUpdateRef.current = true;
+              if (newRow.is_playing !== undefined) setIsPlaying(newRow.is_playing);
+              if (newRow.last_timestamp !== undefined) {
+                currentTimeRef.current = newRow.last_timestamp;
+                safeSeek(newRow.last_timestamp);
+              }
+              setTimeout(() => { isRemoteUpdateRef.current = false; }, 100);
+            }
+          }
+        )
+        .subscribe();
+      roomsChannelRef.current = roomsChannel;
     };
 
     run();
@@ -213,6 +238,8 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       mounted = false;
       channelRef.current?.unsubscribe();
       channelRef.current = null;
+      roomsChannelRef.current?.unsubscribe();
+      roomsChannelRef.current = null;
     };
   }, [roomId, syncFromRoom, safeSeek, url]);
 

@@ -17,7 +17,9 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
   const [copied, setCopied] = useState(false);
 
   const inviteUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/watch/${roomId}` : "";
+    typeof window !== "undefined"
+      ? `${window.location.origin}/watch/${roomId}?u=${encodeURIComponent(videoUrl)}`
+      : "";
 
   const handleCopyLink = async () => {
     try {

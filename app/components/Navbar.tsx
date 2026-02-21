@@ -1,21 +1,24 @@
 import Link from "next/link";
+import { Sofa } from "lucide-react";
+import StartWatchPartyButton from "./StartWatchPartyButton";
 
 export default function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between px-6 bg-[#141414]">
       <Link
         href="/"
-        className="text-[#e50914] font-bold text-2xl tracking-tight hover:text-[#f40612] transition-colors"
-        aria-label="Home"
+        className="flex items-center gap-2 text-[#E50914] font-bold text-xl tracking-tight hover:text-[#f40612] transition-colors"
+        aria-label="The Social Sofa - Home"
       >
-        NETFLIX
+        <Sofa className="h-7 w-7" strokeWidth={2.5} />
+        The Social Sofa
       </Link>
-      <Link
-        href="/watch/new"
-        className="rounded bg-[#e50914] px-4 py-2 text-sm font-semibold text-white hover:bg-[#f40612]"
+      <StartWatchPartyButton
+        variant="compact"
+        videoUrl="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
       >
-        Watch now
-      </Link>
+        Start Watch Party
+      </StartWatchPartyButton>
     </nav>
   );
 }
