@@ -29,17 +29,22 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
   };
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col md:flex-row">
-      {/* Video column */}
-      <div className="flex min-h-0 flex-1 flex-col p-4 md:p-6">
+    <div className="relative flex h-[calc(100vh-3.5rem)] flex-col md:flex-row">
+      {/* Share banner - prominent at top */}
+      <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-black/40 px-4 py-3 md:absolute md:left-0 md:right-0 md:top-0 md:z-10 md:border-0 md:bg-gradient-to-b md:from-black/80 md:to-transparent md:px-6 md:py-4">
+        <span className="text-sm text-white/90">Share this link to invite friends</span>
         <button
           type="button"
           onClick={handleCopyLink}
-          className="mb-3 flex w-fit items-center gap-2 self-end rounded bg-[#e50914] px-3 py-2 text-sm font-medium text-white hover:bg-[#f40612]"
+          className="flex shrink-0 items-center gap-2 rounded bg-[#e50914] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#f40612]"
         >
           <Link2 className="h-4 w-4" />
           {copied ? "Copied!" : "Copy Invite Link"}
         </button>
+      </div>
+
+      {/* Video column */}
+      <div className="flex min-h-0 flex-1 flex-col p-4 pt-14 md:p-6 md:pt-20">
         <VideoPlayer roomId={roomId} url={videoUrl} className="rounded overflow-hidden" />
       </div>
 

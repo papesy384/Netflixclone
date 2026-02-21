@@ -30,6 +30,15 @@ function getOrCreateClientId(): string {
   return id;
 }
 
+function getYouTubeId(url: string): string | null {
+  try {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayerProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
@@ -39,8 +48,10 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const channelRef = useRef<any>(null);
 
+  const [effectiveUrl, setEffectiveUrl] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const pendingSeekRef = useRef<number | null>(null);
 
   const syncFromRoom = useCallback((state: RoomState) => {
@@ -91,7 +102,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     const run = async () => {
       const { data: room, error } = await client
         .from("rooms")
-        .select("is_playing, last_timestamp, host_id")
+        .select("is_playing, last_timestamp, host_id, video_id")
         .eq("id", roomId)
         .maybeSingle();
 
@@ -104,10 +115,11 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       }
 
       let isHost = false;
+      const videoIdFromUrl = getYouTubeId(url);
       if (!room) {
         const { error: insertError } = await client.from("rooms").insert({
           id: roomId,
-          video_id: "",
+          video_id: videoIdFromUrl ?? "",
           is_playing: false,
           last_timestamp: 0,
           host_id: clientId,
@@ -120,6 +132,15 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           last_timestamp: room.last_timestamp ?? 0,
           host_id: room.host_id,
         });
+        const roomVideoId = (room as { video_id?: string }).video_id;
+        if (roomVideoId) {
+          setEffectiveUrl(`https://www.youtube.com/watch?v=${roomVideoId}`);
+        } else if (videoIdFromUrl) {
+          await client
+            .from("rooms")
+            .update({ video_id: videoIdFromUrl })
+            .eq("id", roomId);
+        }
       }
       isHostRef.current = isHost;
       setInitialSyncDone(true);
@@ -196,9 +217,15 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel to enable sync.
         </div>
       )}
+      {hasError && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black p-4 text-center text-white">
+          <p className="text-sm">This video can&apos;t be played (embed may be restricted).</p>
+          <p className="mt-2 text-xs text-white/70">Try another movie or check your connection.</p>
+        </div>
+      )}
       <ReactPlayer
         ref={playerRef}
-        url={url}
+        url={effectiveUrl}
         width="100%"
         height="100%"
         playing={isPlaying}
@@ -207,6 +234,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         onReady={handleReady}
         onPlay={handlePlay}
         onPause={handlePause}
+        onError={() => setHasError(true)}
         // @ts-expect-error react-player types extend HTMLVideoElement; onProgress actually receives { playedSeconds }
         onProgress={handleProgress}
         onSeeked={handleSeeked}
