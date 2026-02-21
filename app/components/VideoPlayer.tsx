@@ -60,6 +60,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const [hasError, setHasError] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomReady, setRoomReady] = useState(false);
+  const [needsUserClickToPlay, setNeedsUserClickToPlay] = useState(false);
   const pendingSeekRef = useRef<number | null>(null);
   const isRemoteUpdateRef = useRef(false);
 
@@ -128,8 +129,18 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     if (!el || !isDirectVideoUrl(effectiveUrl)) return;
     const video = el as HTMLVideoElement;
     if (isPlaying) {
-      video.play().catch(() => {});
+      video.play()
+        .then(() => setNeedsUserClickToPlay(false))
+        .catch(() => {
+          video.muted = true;
+          video.play()
+            .then(() => {
+              setNeedsUserClickToPlay(false);
+            })
+            .catch(() => setNeedsUserClickToPlay(true));
+        });
     } else {
+      setNeedsUserClickToPlay(false);
       video.pause();
     }
   }, [isPlaying, effectiveUrl]);
@@ -296,6 +307,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   );
 
   const handleSeeked = useCallback(() => {
+    if (isRemoteUpdateRef.current) return;
     if (initialSyncDone) {
       const t = currentTimeRef.current;
       broadcastPlayback(isPlaying, t);
@@ -317,6 +329,14 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       pendingSeekRef.current = null;
     }
   }, []);
+
+  const handleUserClickToPlay = useCallback(() => {
+    setNeedsUserClickToPlay(false);
+    const el = playerRef.current;
+    if (el && isDirectVideoUrl(effectiveUrl)) {
+      (el as HTMLVideoElement).play().catch(() => setNeedsUserClickToPlay(true));
+    }
+  }, [effectiveUrl]);
 
   return (
     <div className={`relative aspect-video w-full bg-black ${className}`}>
@@ -341,6 +361,17 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden />
         </div>
+      )}
+      {needsUserClickToPlay && roomReady && (
+        <button
+          type="button"
+          onClick={handleUserClickToPlay}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 transition-colors hover:bg-black/60"
+        >
+          <span className="rounded bg-[#E50914] px-6 py-3 text-sm font-semibold text-white">
+            Click to sync with party
+          </span>
+        </button>
       )}
       {isDirectVideoUrl(effectiveUrl) ? (
         <video
