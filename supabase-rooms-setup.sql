@@ -32,7 +32,7 @@ CREATE POLICY "Allow public insert rooms" ON public.rooms
 CREATE POLICY "Allow public update rooms" ON public.rooms
   FOR UPDATE TO anon, authenticated USING (true);
 
--- Add rooms to Realtime for broadcast (if not already)
+-- Add rooms to Realtime for postgres_changes (if not already)
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -42,3 +42,30 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.rooms;
   END IF;
 END $$;
+
+-- Server-side broadcast: when rooms row updates, broadcast playback state to all clients.
+-- Clients subscribe to channel 'room:{roomId}' and receive this via the broadcast listener.
+-- Run this in Supabase SQL Editor. Requires realtime extension.
+CREATE OR REPLACE FUNCTION public.broadcast_room_playback()
+RETURNS trigger
+SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  PERFORM realtime.send(
+    jsonb_build_object(
+      'is_playing', NEW.is_playing,
+      'last_timestamp', NEW.last_timestamp
+    ),
+    'playback',
+    'room:' || NEW.id::text,
+    false
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS rooms_playback_broadcast ON public.rooms;
+CREATE TRIGGER rooms_playback_broadcast
+  AFTER UPDATE OF is_playing, last_timestamp ON public.rooms
+  FOR EACH ROW
+  EXECUTE FUNCTION public.broadcast_room_playback();

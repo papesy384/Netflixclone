@@ -98,14 +98,15 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         .update({ is_playing, last_timestamp })
         .eq("id", roomId);
 
+      const payload = {
+        is_playing,
+        last_timestamp,
+        client_id: clientIdRef.current,
+      };
       channel.send({
         type: "broadcast",
         event: BROADCAST_EVENT,
-        payload: {
-          is_playing,
-          last_timestamp,
-          client_id: clientIdRef.current,
-        },
+        payload,
       });
     },
     [roomId]
@@ -131,6 +132,17 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       video.pause();
     }
   }, [isPlaying, effectiveUrl]);
+
+  // Drift management: broadcast current position every 5s when playing (PRD)
+  useEffect(() => {
+    if (!isPlaying || !isHostRef.current) return;
+    const interval = setInterval(() => {
+      if (isRemoteUpdateRef.current) return;
+      const t = currentTimeRef.current;
+      if (t > 0) broadcastPlayback(true, t);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isPlaying, broadcastPlayback]);
 
   // Fetch room state and subscribe to broadcast (runs in background, never blocks video)
   useEffect(() => {
@@ -195,15 +207,18 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         .on(
           "broadcast",
           { event: BROADCAST_EVENT },
-          (payload: { payload: { is_playing: boolean; last_timestamp: number; client_id?: string } }) => {
+          (payload: { payload?: { is_playing: boolean; last_timestamp: number; client_id?: string }; is_playing?: boolean; last_timestamp?: number }) => {
             if (!mounted) return;
-            const { is_playing, last_timestamp, client_id } = payload.payload;
+            const data = payload.payload ?? payload;
+            const is_playing = data?.is_playing;
+            const last_timestamp = data?.last_timestamp ?? 0;
+            const client_id = (data as { client_id?: string })?.client_id;
             if (client_id === clientId) return;
             isRemoteUpdateRef.current = true;
-            setIsPlaying(is_playing);
+            if (is_playing !== undefined) setIsPlaying(is_playing);
             currentTimeRef.current = last_timestamp;
             safeSeek(last_timestamp);
-            setTimeout(() => { isRemoteUpdateRef.current = false; }, 100);
+            setTimeout(() => { isRemoteUpdateRef.current = false; }, 500);
           }
         )
         .subscribe((status) => {
@@ -225,7 +240,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
                 currentTimeRef.current = newRow.last_timestamp;
                 safeSeek(newRow.last_timestamp);
               }
-              setTimeout(() => { isRemoteUpdateRef.current = false; }, 100);
+              setTimeout(() => { isRemoteUpdateRef.current = false; }, 500);
             }
           }
         )
