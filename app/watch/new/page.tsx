@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 
-export default function NewRoomPage() {
+type PageProps = {
+  searchParams: Promise<{ v?: string }>;
+};
+
+export default async function NewRoomPage({ searchParams }: PageProps) {
+  const { v: videoId } = await searchParams;
   const roomId = crypto.randomUUID();
-  redirect(`/watch/${roomId}`);
+  const query = videoId ? `?v=${videoId}` : "";
+  redirect(`/watch/${roomId}${query}`);
 }
