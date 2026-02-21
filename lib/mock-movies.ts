@@ -11,7 +11,7 @@ const EMBEDDABLE_VIDEOS = [
   "dQw4w9WgXcQ", // Reliably embeddable
   "jNQXAC9IVRw", // First YouTube video
   "9bZkp7q19f0", // Gangnam Style (official)
-  "kJQP7kiw5Fk", // Despacito (official)
+  "dQw4w9WgXcQ", // Reliably embeddable (Despacito blocks embedding)
   "RgKAFK5djSk", // See You Again (official)
   "OPf0YbXqDm0", // Uptown Funk (official)
   "fJ9rUzIMcZQ", // Bohemian Rhapsody (official)
