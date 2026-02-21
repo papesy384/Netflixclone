@@ -39,6 +39,10 @@ function getYouTubeId(url: string): string | null {
   }
 }
 
+function isDirectVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|ogg|m3u8)(\?|$)/i.test(url) || url.includes("commondatastorage.googleapis.com");
+}
+
 export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayerProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
@@ -51,17 +55,35 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const [effectiveUrl, setEffectiveUrl] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHost, setIsHost] = useState(false);
-  const [initialSyncDone, setInitialSyncDone] = useState(false);
+  const [initialSyncDone, setInitialSyncDone] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
 
-  const syncFromRoom = useCallback((state: RoomState) => {
-    setIsPlaying(state.is_playing);
-    currentTimeRef.current = state.last_timestamp;
-    pendingSeekRef.current = state.last_timestamp;
-    playerRef.current?.seekTo(state.last_timestamp, "seconds");
+  const safeSeek = useCallback((seconds: number) => {
+    const player = playerRef.current;
+    if (!player) {
+      pendingSeekRef.current = seconds;
+      return;
+    }
+    if (typeof player.seekTo === "function") {
+      player.seekTo(seconds, "seconds");
+    } else if (typeof (player as HTMLVideoElement).currentTime !== "undefined") {
+      (player as HTMLVideoElement).currentTime = seconds;
+    } else {
+      pendingSeekRef.current = seconds;
+    }
   }, []);
+
+  const syncFromRoom = useCallback(
+    (state: RoomState) => {
+      setIsPlaying(state.is_playing);
+      currentTimeRef.current = state.last_timestamp;
+      pendingSeekRef.current = state.last_timestamp;
+      safeSeek(state.last_timestamp);
+    },
+    [safeSeek]
+  );
 
   const broadcastPlayback = useCallback(
     async (is_playing: boolean, last_timestamp: number) => {
@@ -91,13 +113,16 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     clientIdRef.current = getOrCreateClientId();
   }, []);
 
-  // Fetch room state and subscribe to broadcast
+  useEffect(() => {
+    setEffectiveUrl(url);
+    setHasError(false);
+  }, [url]);
+
+  // Fetch room state and subscribe to broadcast (runs in background, never blocks video)
   useEffect(() => {
     const client = supabase;
-    if (!client) {
-      queueMicrotask(() => setInitialSyncDone(true));
-      return;
-    }
+    if (!client) return;
+
     let mounted = true;
     const clientId = clientIdRef.current;
 
@@ -113,7 +138,6 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       if (error) {
         console.error("Room fetch error:", error);
         setRoomError(error.message ?? "Could not load room.");
-        setInitialSyncDone(true);
         return;
       }
 
@@ -147,7 +171,6 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       }
       isHostRef.current = isHost;
       setIsHost(isHost);
-      setInitialSyncDone(true);
 
       const channel = client.channel(`room:${roomId}`);
       channelRef.current = channel;
@@ -162,7 +185,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
             if (client_id === clientId) return;
             setIsPlaying(is_playing);
             currentTimeRef.current = last_timestamp;
-            playerRef.current?.seekTo(last_timestamp, "seconds");
+            safeSeek(last_timestamp);
           }
         )
         .subscribe((status) => {
@@ -176,20 +199,22 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       channelRef.current?.unsubscribe();
       channelRef.current = null;
     };
-  }, [roomId, syncFromRoom, url]);
+  }, [roomId, syncFromRoom, safeSeek, url]);
 
   const handlePlay = useCallback(() => {
-    if (!initialSyncDone) return;
-    const t = currentTimeRef.current;
-    broadcastPlayback(true, t);
     setIsPlaying(true);
+    if (initialSyncDone) {
+      const t = currentTimeRef.current;
+      broadcastPlayback(true, t);
+    }
   }, [initialSyncDone, broadcastPlayback]);
 
   const handlePause = useCallback(() => {
-    if (!initialSyncDone) return;
-    const t = currentTimeRef.current;
-    broadcastPlayback(false, t);
     setIsPlaying(false);
+    if (initialSyncDone) {
+      const t = currentTimeRef.current;
+      broadcastPlayback(false, t);
+    }
   }, [initialSyncDone, broadcastPlayback]);
 
   const handleProgress = useCallback(
@@ -200,15 +225,24 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   );
 
   const handleSeeked = useCallback(() => {
-    if (!initialSyncDone) return;
-    const t = currentTimeRef.current;
-    broadcastPlayback(isPlaying, t);
+    if (initialSyncDone) {
+      const t = currentTimeRef.current;
+      broadcastPlayback(isPlaying, t);
+    }
   }, [initialSyncDone, isPlaying, broadcastPlayback]);
 
   const handleReady = useCallback(() => {
     const pending = pendingSeekRef.current;
-    if (pending !== null && playerRef.current) {
-      playerRef.current.seekTo(pending, "seconds");
+    if (pending !== null) {
+      safeSeek(pending);
+      pendingSeekRef.current = null;
+    }
+  }, [safeSeek]);
+
+  const handleVideoCanPlay = useCallback(() => {
+    const pending = pendingSeekRef.current;
+    if (pending !== null && playerRef.current && "currentTime" in playerRef.current) {
+      (playerRef.current as HTMLVideoElement).currentTime = pending;
       pendingSeekRef.current = null;
     }
   }, []);
@@ -221,48 +255,51 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel to enable sync.
         </div>
       )}
-      {!initialSyncDone && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 p-4 text-center text-white">
-          <p className="text-sm text-white/80">Loading room…</p>
+      {roomError && (
+        <div className="absolute left-0 right-0 top-0 z-10 bg-amber-500/90 px-3 py-2 text-center text-xs text-black">
+          {roomError} — Sync disabled. Video may still play below.
         </div>
       )}
-      {initialSyncDone && !isPlaying && !roomError && !hasError && (
-        <div className="absolute bottom-12 left-4 right-4 z-10 rounded bg-black/70 px-3 py-2 text-center text-xs text-white/90">
-          Press play to start watching together
+      {hasError && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/90 p-4 text-center text-white">
+          <p className="text-sm">This video can&apos;t be played (embed may be restricted).</p>
+          <p className="mt-2 text-xs text-white/70">Try another movie from the home page.</p>
         </div>
       )}
-      {(roomError || hasError) && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black p-4 text-center text-white">
-          {roomError && (
-            <>
-              <p className="text-sm text-red-400">{roomError}</p>
-              <p className="mt-2 text-xs text-white/70">Sync disabled. Video may still play.</p>
-            </>
-          )}
-          {!roomError && hasError && (
-            <>
-              <p className="text-sm">This video can&apos;t be played (embed may be restricted).</p>
-              <p className="mt-2 text-xs text-white/70">Try another movie or check your connection.</p>
-            </>
-          )}
-        </div>
+      {isDirectVideoUrl(effectiveUrl) ? (
+        <video
+          ref={playerRef as React.RefObject<HTMLVideoElement>}
+          src={effectiveUrl}
+          controls
+          playsInline
+          className="absolute inset-0 h-full w-full"
+          onCanPlay={handleVideoCanPlay}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onTimeUpdate={(e) => {
+            currentTimeRef.current = e.currentTarget.currentTime;
+          }}
+          onSeeked={() => handleSeeked()}
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <ReactPlayer
+          ref={playerRef}
+          url={effectiveUrl}
+          width="100%"
+          height="100%"
+          playing={isPlaying}
+          controls
+          className="absolute inset-0"
+          onReady={handleReady}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onError={() => setHasError(true)}
+          // @ts-expect-error react-player types extend HTMLVideoElement; onProgress actually receives { playedSeconds }
+          onProgress={handleProgress}
+          onSeeked={handleSeeked}
+        />
       )}
-      <ReactPlayer
-        ref={playerRef}
-        url={effectiveUrl}
-        width="100%"
-        height="100%"
-        playing={isPlaying}
-        controls
-        className="absolute inset-0"
-        onReady={handleReady}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onError={() => setHasError(true)}
-        // @ts-expect-error react-player types extend HTMLVideoElement; onProgress actually receives { playedSeconds }
-        onProgress={handleProgress}
-        onSeeked={handleSeeked}
-      />
     </div>
   );
 }

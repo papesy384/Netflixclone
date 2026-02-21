@@ -14,6 +14,13 @@ export default function Home() {
         <p className="mt-4 max-w-xl text-lg text-white/80 sm:text-xl">
           Watch together in sync. Pick a movie and start a party.
         </p>
+        <Link
+          href="/watch/new"
+          className="mt-8 inline-flex items-center gap-2 rounded bg-[#e50914] px-8 py-4 text-lg font-semibold text-white hover:bg-[#f40612]"
+        >
+          <Play className="h-5 w-5" fill="currentColor" />
+          Watch now
+        </Link>
       </section>
 
       {/* Movie grid */}
@@ -23,7 +30,7 @@ export default function Home() {
           {MOCK_MOVIES.map((movie, i) => (
             <Link
               key={movie.id}
-              href={`/watch/new?v=${movie.videoId}`}
+              href={`/watch/new?u=${encodeURIComponent(movie.videoUrl)}`}
               className="group relative aspect-[2/3] overflow-hidden rounded-md bg-white/5 transition-transform hover:scale-105"
             >
               <Image

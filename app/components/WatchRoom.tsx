@@ -10,7 +10,7 @@ type WatchRoomProps = {
   videoUrl?: string;
 };
 
-const DEFAULT_VIDEO = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const DEFAULT_VIDEO = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 
 export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoomProps) {
   const [chatOpen, setChatOpen] = useState(false);
@@ -63,8 +63,8 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
 
   return (
     <div className="relative flex h-[calc(100vh-3.5rem)] flex-col md:flex-row">
-      {/* Share banner - prominent at top */}
-      <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-black/40 px-4 py-3 md:absolute md:left-0 md:right-0 md:top-0 md:z-10 md:border-0 md:bg-gradient-to-b md:from-black/80 md:to-transparent md:px-6 md:py-4">
+      {/* Share banner - over video only, not chat */}
+      <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-black/40 px-4 py-3 md:absolute md:left-0 md:right-[380px] md:top-0 md:z-10 md:border-0 md:bg-gradient-to-b md:from-black/80 md:to-transparent md:px-6 md:py-4">
         <span className="text-sm text-white/90">Share this link to invite friends</span>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
