@@ -50,6 +50,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
   const [effectiveUrl, setEffectiveUrl] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isHost, setIsHost] = useState(false);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     async (is_playing: boolean, last_timestamp: number) => {
       if (!supabase) return;
       const channel = channelRef.current;
-      if (!channel || !isHostRef.current) return;
+      if (!channel) return;
 
       await supabase
         .from("rooms")
@@ -145,6 +146,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         }
       }
       isHostRef.current = isHost;
+      setIsHost(isHost);
       setInitialSyncDone(true);
 
       const channel = client.channel(`room:${roomId}`);
@@ -177,14 +179,14 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   }, [roomId, syncFromRoom, url]);
 
   const handlePlay = useCallback(() => {
-    if (!initialSyncDone || !isHostRef.current) return;
+    if (!initialSyncDone) return;
     const t = currentTimeRef.current;
     broadcastPlayback(true, t);
     setIsPlaying(true);
   }, [initialSyncDone, broadcastPlayback]);
 
   const handlePause = useCallback(() => {
-    if (!initialSyncDone || !isHostRef.current) return;
+    if (!initialSyncDone) return;
     const t = currentTimeRef.current;
     broadcastPlayback(false, t);
     setIsPlaying(false);
@@ -198,7 +200,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   );
 
   const handleSeeked = useCallback(() => {
-    if (!initialSyncDone || !isHostRef.current) return;
+    if (!initialSyncDone) return;
     const t = currentTimeRef.current;
     broadcastPlayback(isPlaying, t);
   }, [initialSyncDone, isPlaying, broadcastPlayback]);
@@ -217,6 +219,16 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         <div className="absolute left-0 right-0 top-0 z-10 bg-amber-500/90 px-3 py-2 text-center text-sm text-black">
           Add <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
           <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel to enable sync.
+        </div>
+      )}
+      {!initialSyncDone && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 p-4 text-center text-white">
+          <p className="text-sm text-white/80">Loading room…</p>
+        </div>
+      )}
+      {initialSyncDone && !isPlaying && !roomError && !hasError && (
+        <div className="absolute bottom-12 left-4 right-4 z-10 rounded bg-black/70 px-3 py-2 text-center text-xs text-white/90">
+          Press play to start watching together
         </div>
       )}
       {(roomError || hasError) && (

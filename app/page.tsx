@@ -20,7 +20,7 @@ export default function Home() {
       <section className="px-6 pb-12">
         <h2 className="mb-6 text-2xl font-semibold text-white">Trending Now</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {MOCK_MOVIES.map((movie) => (
+          {MOCK_MOVIES.map((movie, i) => (
             <Link
               key={movie.id}
               href={`/watch/new?v=${movie.videoId}`}
@@ -32,6 +32,9 @@ export default function Home() {
                 fill
                 sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
                 className="object-cover"
+                priority={i < 6}
+                placeholder="blur"
+                blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAoDASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAUH/8QAIhAAAgEDBAMBAAAAAAAAAAAAAQIDAAQRBRIhMQYTQVFh/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAZEQACAwEAAAAAAAAAAAAAAAABAgADESH/2gAMAwEAAhEDEEA/AL2k6DY2enW1tbW6xxRRqiKOgAMAfirtFFZnYk5M/9k="
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
               <div className="absolute inset-0 flex flex-col justify-end p-3 opacity-0 transition-opacity group-hover:opacity-100">
