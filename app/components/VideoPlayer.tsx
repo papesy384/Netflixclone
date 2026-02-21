@@ -204,15 +204,12 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       channelRef.current = channel;
 
       channel
-        .on(
-          "broadcast",
-          { event: BROADCAST_EVENT },
-          (payload: { payload?: { is_playing: boolean; last_timestamp: number; client_id?: string }; is_playing?: boolean; last_timestamp?: number }) => {
+        .on("broadcast", { event: BROADCAST_EVENT }, (payload: { payload?: Record<string, unknown>; [key: string]: unknown }) => {
             if (!mounted) return;
-            const data = payload.payload ?? payload;
+            const data = (payload.payload ?? payload) as { is_playing?: boolean; last_timestamp?: number; client_id?: string };
             const is_playing = data?.is_playing;
             const last_timestamp = data?.last_timestamp ?? 0;
-            const client_id = (data as { client_id?: string })?.client_id;
+            const client_id = data?.client_id;
             if (client_id === clientId) return;
             isRemoteUpdateRef.current = true;
             if (is_playing !== undefined) setIsPlaying(is_playing);
