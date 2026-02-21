@@ -5,9 +5,13 @@ import { Play } from "lucide-react";
 import StartWatchPartyButton from "./StartWatchPartyButton";
 import type { MockMovie } from "@/lib/mock-movies";
 
-export default function MovieCard({ movie }: { movie: MockMovie }) {
+export default function MovieCard({ movie, compact }: { movie: MockMovie; compact?: boolean }) {
   return (
-    <div className="group relative aspect-[2/3] overflow-hidden rounded-md bg-white/5 transition-transform hover:scale-105">
+    <div
+      className={`group relative overflow-hidden rounded-md bg-white/5 transition-transform hover:scale-105 ${
+        compact ? "h-full w-full min-h-0" : "aspect-[2/3]"
+      }`}
+    >
       <Image
         src={movie.poster}
         alt={movie.title}
