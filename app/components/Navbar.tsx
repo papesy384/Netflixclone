@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Sofa } from "lucide-react";
-import StartWatchPartyButton from "./StartWatchPartyButton";
 
 export default function Navbar() {
   return (
@@ -13,12 +12,6 @@ export default function Navbar() {
         <Sofa className="h-7 w-7" strokeWidth={2.5} />
         The Social Sofa
       </Link>
-      <StartWatchPartyButton
-        variant="compact"
-        videoUrl="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-      >
-        Start Watch Party
-      </StartWatchPartyButton>
     </nav>
   );
 }
