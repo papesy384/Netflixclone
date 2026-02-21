@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { MOCK_MOVIES } from "@/lib/mock-movies";
-import StartWatchPartyButton from "./components/StartWatchPartyButton";
 import MovieCard from "./components/MovieCard";
 
 export default function Home() {
@@ -42,14 +41,8 @@ export default function Home() {
           Watch together in sync. Free. Invite anyone with a link.
         </p>
         <p className="mt-3 text-xs text-white/70 sm:text-sm">
-          Ready to watch? Start a watch party and invite your friends.
+          Ready to watch? Pick your favorite movie, start a watch party and invite your friends.
         </p>
-        <StartWatchPartyButton
-          className="mt-3"
-          videoUrl="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-        >
-          Get Started →
-        </StartWatchPartyButton>
       </section>
 
       {/* Trending Now - one row */}
