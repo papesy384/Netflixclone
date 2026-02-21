@@ -59,6 +59,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const [hasError, setHasError] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+  const isRemoteUpdateRef = useRef(false);
 
   const safeSeek = useCallback((seconds: number) => {
     const player = playerRef.current;
@@ -117,6 +118,18 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     setEffectiveUrl(url);
     setHasError(false);
   }, [url]);
+
+  // Sync isPlaying to native video element (broadcast from friend -> play on your device)
+  useEffect(() => {
+    const el = playerRef.current;
+    if (!el || !isDirectVideoUrl(effectiveUrl)) return;
+    const video = el as HTMLVideoElement;
+    if (isPlaying) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, effectiveUrl]);
 
   // Fetch room state and subscribe to broadcast (runs in background, never blocks video)
   useEffect(() => {
@@ -183,9 +196,11 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
             if (!mounted) return;
             const { is_playing, last_timestamp, client_id } = payload.payload;
             if (client_id === clientId) return;
+            isRemoteUpdateRef.current = true;
             setIsPlaying(is_playing);
             currentTimeRef.current = last_timestamp;
             safeSeek(last_timestamp);
+            setTimeout(() => { isRemoteUpdateRef.current = false; }, 100);
           }
         )
         .subscribe((status) => {
@@ -202,6 +217,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   }, [roomId, syncFromRoom, safeSeek, url]);
 
   const handlePlay = useCallback(() => {
+    if (isRemoteUpdateRef.current) return;
     setIsPlaying(true);
     if (initialSyncDone) {
       const t = currentTimeRef.current;
@@ -210,6 +226,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   }, [initialSyncDone, broadcastPlayback]);
 
   const handlePause = useCallback(() => {
+    if (isRemoteUpdateRef.current) return;
     setIsPlaying(false);
     if (initialSyncDone) {
       const t = currentTimeRef.current;
