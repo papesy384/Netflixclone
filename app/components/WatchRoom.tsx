@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link2, Mail } from "lucide-react";
+import { Link2, Mail, MessageCircle, Share2 } from "lucide-react";
 import VideoPlayer from "./VideoPlayer";
 import ChatSidebar, { ChatToggleButton } from "./ChatSidebar";
 
@@ -29,12 +29,36 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
     }
   };
 
+  const shareSubject = "Join my watch party - The Social Sofa";
+  const shareBody = `Join me watching together!\n\n${inviteUrl}\n\nClick the link to join the room and watch in sync.`;
+
   const handleShareViaEmail = () => {
-    const subject = encodeURIComponent("Join my watch party - The Social Sofa");
-    const body = encodeURIComponent(
-      `Join me watching together!\n\n${inviteUrl}\n\nClick the link to join the room and watch in sync.`
-    );
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(shareBody)}`;
+  };
+
+  const handleShareViaGmail = () => {
+    const url = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(shareBody)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleShareViaSms = () => {
+    window.location.href = `sms:?body=${encodeURIComponent(`${shareSubject}\n\n${inviteUrl}`)}`;
+  };
+
+  const handleNativeShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareSubject,
+          text: shareBody,
+          url: inviteUrl,
+        });
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") handleCopyLink();
+      }
+    } else {
+      handleCopyLink();
+    }
   };
 
   return (
@@ -42,14 +66,42 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
       {/* Share banner - prominent at top */}
       <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-black/40 px-4 py-3 md:absolute md:left-0 md:right-0 md:top-0 md:z-10 md:border-0 md:bg-gradient-to-b md:from-black/80 md:to-transparent md:px-6 md:py-4">
         <span className="text-sm text-white/90">Share this link to invite friends</span>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleShareViaSms}
+            className="flex items-center gap-2 rounded border border-white/30 bg-transparent px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+            title="Share via SMS"
+          >
+            <MessageCircle className="h-4 w-4" />
+            SMS
+          </button>
           <button
             type="button"
             onClick={handleShareViaEmail}
             className="flex items-center gap-2 rounded border border-white/30 bg-transparent px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+            title="Share via email"
           >
             <Mail className="h-4 w-4" />
-            Email link
+            Email
+          </button>
+          <button
+            type="button"
+            onClick={handleShareViaGmail}
+            className="flex items-center gap-2 rounded border border-white/30 bg-transparent px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#ea4335] hover:border-[#ea4335]"
+            title="Share via Gmail"
+          >
+            <Share2 className="h-4 w-4" />
+            Gmail
+          </button>
+          <button
+            type="button"
+            onClick={handleNativeShare}
+            className="flex items-center gap-2 rounded border border-white/30 bg-transparent px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 md:hidden"
+            title="Share (phone native)"
+          >
+            <Share2 className="h-4 w-4" />
+            Share
           </button>
           <button
             type="button"
