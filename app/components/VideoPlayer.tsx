@@ -59,6 +59,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const [initialSyncDone, setInitialSyncDone] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomReady, setRoomReady] = useState(false);
   const pendingSeekRef = useRef<number | null>(null);
   const isRemoteUpdateRef = useRef(false);
 
@@ -147,7 +148,10 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   // Fetch room state and subscribe to broadcast (runs in background, never blocks video)
   useEffect(() => {
     const client = supabase;
-    if (!client) return;
+    if (!client) {
+      setRoomReady(true);
+      return;
+    }
 
     let mounted = true;
     const clientId = clientIdRef.current;
@@ -164,6 +168,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       if (error) {
         console.error("Room fetch error:", error);
         setRoomError(error.message ?? "Could not load room.");
+        setRoomReady(true);
         return;
       }
 
@@ -243,11 +248,13 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         )
         .subscribe();
       roomsChannelRef.current = roomsChannel;
+      setRoomReady(true);
     };
 
     run();
     return () => {
       mounted = false;
+      setRoomReady(false);
       channelRef.current?.unsubscribe();
       channelRef.current = null;
       roomsChannelRef.current?.unsubscribe();
@@ -270,6 +277,14 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     if (initialSyncDone) {
       const t = currentTimeRef.current;
       broadcastPlayback(false, t);
+    }
+  }, [initialSyncDone, broadcastPlayback]);
+
+  const handleEnded = useCallback(() => {
+    if (isRemoteUpdateRef.current) return;
+    setIsPlaying(false);
+    if (initialSyncDone) {
+      broadcastPlayback(false, currentTimeRef.current);
     }
   }, [initialSyncDone, broadcastPlayback]);
 
@@ -322,6 +337,11 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           <p className="mt-2 text-xs text-white/70">Try another movie from the home page.</p>
         </div>
       )}
+      {!roomReady && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden />
+        </div>
+      )}
       {isDirectVideoUrl(effectiveUrl) ? (
         <video
           ref={playerRef as React.RefObject<HTMLVideoElement>}
@@ -336,6 +356,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
             currentTimeRef.current = e.currentTarget.currentTime;
           }}
           onSeeked={() => handleSeeked()}
+          onEnded={handleEnded}
           onError={() => setHasError(true)}
         />
       ) : (
@@ -350,6 +371,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           onReady={handleReady}
           onPlay={handlePlay}
           onPause={handlePause}
+          onEnded={handleEnded}
           onError={() => setHasError(true)}
           // @ts-expect-error react-player types extend HTMLVideoElement; onProgress actually receives { playedSeconds }
           onProgress={handleProgress}
