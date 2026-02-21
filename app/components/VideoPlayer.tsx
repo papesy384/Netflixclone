@@ -52,6 +52,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const [isPlaying, setIsPlaying] = useState(false);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
 
   const syncFromRoom = useCallback((state: RoomState) => {
@@ -93,7 +94,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   useEffect(() => {
     const client = supabase;
     if (!client) {
-      setInitialSyncDone(true);
+      queueMicrotask(() => setInitialSyncDone(true));
       return;
     }
     let mounted = true;
@@ -110,6 +111,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
 
       if (error) {
         console.error("Room fetch error:", error);
+        setRoomError(error.message ?? "Could not load room.");
         setInitialSyncDone(true);
         return;
       }
@@ -172,7 +174,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       channelRef.current?.unsubscribe();
       channelRef.current = null;
     };
-  }, [roomId, syncFromRoom]);
+  }, [roomId, syncFromRoom, url]);
 
   const handlePlay = useCallback(() => {
     if (!initialSyncDone || !isHostRef.current) return;
@@ -217,10 +219,20 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel to enable sync.
         </div>
       )}
-      {hasError && (
+      {(roomError || hasError) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black p-4 text-center text-white">
-          <p className="text-sm">This video can&apos;t be played (embed may be restricted).</p>
-          <p className="mt-2 text-xs text-white/70">Try another movie or check your connection.</p>
+          {roomError && (
+            <>
+              <p className="text-sm text-red-400">{roomError}</p>
+              <p className="mt-2 text-xs text-white/70">Sync disabled. Video may still play.</p>
+            </>
+          )}
+          {!roomError && hasError && (
+            <>
+              <p className="text-sm">This video can&apos;t be played (embed may be restricted).</p>
+              <p className="mt-2 text-xs text-white/70">Try another movie or check your connection.</p>
+            </>
+          )}
         </div>
       )}
       <ReactPlayer

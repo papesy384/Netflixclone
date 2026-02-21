@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link2 } from "lucide-react";
+import { Link2, Mail } from "lucide-react";
 import VideoPlayer from "./VideoPlayer";
 import ChatSidebar, { ChatToggleButton } from "./ChatSidebar";
 
@@ -16,16 +16,25 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
   const [chatOpen, setChatOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const inviteUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/watch/${roomId}` : "";
+
   const handleCopyLink = async () => {
-    const url = typeof window !== "undefined" ? `${window.location.origin}/watch/${roomId}` : "";
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback for older browsers
       setCopied(false);
     }
+  };
+
+  const handleShareViaEmail = () => {
+    const subject = encodeURIComponent("Join my watch party - The Social Sofa");
+    const body = encodeURIComponent(
+      `Join me watching together!\n\n${inviteUrl}\n\nClick the link to join the room and watch in sync.`
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
   return (
@@ -33,14 +42,24 @@ export default function WatchRoom({ roomId, videoUrl = DEFAULT_VIDEO }: WatchRoo
       {/* Share banner - prominent at top */}
       <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-black/40 px-4 py-3 md:absolute md:left-0 md:right-0 md:top-0 md:z-10 md:border-0 md:bg-gradient-to-b md:from-black/80 md:to-transparent md:px-6 md:py-4">
         <span className="text-sm text-white/90">Share this link to invite friends</span>
-        <button
-          type="button"
-          onClick={handleCopyLink}
-          className="flex shrink-0 items-center gap-2 rounded bg-[#e50914] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#f40612]"
-        >
-          <Link2 className="h-4 w-4" />
-          {copied ? "Copied!" : "Copy Invite Link"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={handleShareViaEmail}
+            className="flex items-center gap-2 rounded border border-white/30 bg-transparent px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+          >
+            <Mail className="h-4 w-4" />
+            Email link
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            className="flex items-center gap-2 rounded bg-[#e50914] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#f40612]"
+          >
+            <Link2 className="h-4 w-4" />
+            {copied ? "Copied!" : "Copy Link"}
+          </button>
+        </div>
       </div>
 
       {/* Video column */}

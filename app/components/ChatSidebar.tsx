@@ -37,6 +37,7 @@ export default function ChatSidebar({
 }: ChatSidebarProps) {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const displayNameRef = useRef("");
 
@@ -94,13 +95,21 @@ export default function ChatSidebar({
     async (e: React.FormEvent) => {
       e.preventDefault();
       const text = message.trim();
-      if (!text || !supabase) return;
+      setSendError(null);
+      if (!text || !supabase) {
+        if (!supabase) setSendError("Chat unavailable. Configure Supabase.");
+        return;
+      }
 
-      await supabase.from("messages").insert({
+      const { error } = await supabase.from("messages").insert({
         room_id: roomId,
         user_name: displayNameRef.current,
         content: text,
       });
+      if (error) {
+        setSendError(error.message ?? "Failed to send. Try again.");
+        return;
+      }
       setMessage("");
     },
     [message, roomId]
@@ -148,6 +157,11 @@ export default function ChatSidebar({
         <div ref={messagesEndRef} />
       </div>
       <form onSubmit={handleSubmit} className="border-t border-white/10 p-3">
+        {sendError && (
+          <p className="mb-2 text-xs text-red-400" role="alert">
+            {sendError}
+          </p>
+        )}
         <div className="flex gap-2">
           <input
             type="text"
