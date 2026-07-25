@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
+import { parseYouTubeVideoId } from "@/lib/youtube";
 
 const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 
@@ -28,15 +29,6 @@ function getOrCreateClientId(): string {
     localStorage.setItem("social-sofa-client-id", id);
   }
   return id;
-}
-
-function getYouTubeId(url: string): string | null {
-  try {
-    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
 }
 
 function isDirectVideoUrl(url: string): boolean {
@@ -184,7 +176,7 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       }
 
       let isHost = false;
-      const videoIdFromUrl = getYouTubeId(url);
+      const videoIdFromUrl = parseYouTubeVideoId(url);
       const videoIdOrUrl = videoIdFromUrl ?? url; // Store full URL for direct videos
       if (!room) {
         const { error: insertError } = await client.from("rooms").insert({
@@ -204,7 +196,12 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         });
         const roomVideoId = (room as { video_id?: string }).video_id;
         if (roomVideoId) {
-          const resolvedUrl = roomVideoId.startsWith("http") ? roomVideoId : `https://www.youtube.com/watch?v=${roomVideoId}`;
+          const ytId = parseYouTubeVideoId(roomVideoId);
+          const resolvedUrl = roomVideoId.startsWith("http")
+            ? roomVideoId
+            : ytId
+              ? `https://www.youtube.com/watch?v=${ytId}`
+              : `https://www.youtube.com/watch?v=${roomVideoId}`;
           setEffectiveUrl(resolvedUrl);
         } else {
           await client
@@ -299,13 +296,6 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     }
   }, [initialSyncDone, broadcastPlayback]);
 
-  const handleProgress = useCallback(
-    (state: { playedSeconds: number }) => {
-      currentTimeRef.current = state.playedSeconds;
-    },
-    []
-  );
-
   const handleSeeked = useCallback(() => {
     if (isRemoteUpdateRef.current) return;
     if (initialSyncDone) {
@@ -321,6 +311,13 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       pendingSeekRef.current = null;
     }
   }, [safeSeek]);
+
+  const handleEmbeddedTimeUpdate = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      currentTimeRef.current = e.currentTarget.currentTime;
+    },
+    []
+  );
 
   const handleVideoCanPlay = useCallback(() => {
     const pending = pendingSeekRef.current;
@@ -393,19 +390,20 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       ) : (
         <ReactPlayer
           ref={playerRef}
-          url={effectiveUrl}
+          // react-player v3 uses `src` (not the old `url` prop)
+          src={effectiveUrl}
           width="100%"
           height="100%"
           playing={isPlaying}
           controls
-          className="absolute inset-0"
+          playsInline
+          style={{ position: "absolute", inset: 0 }}
           onReady={handleReady}
           onPlay={handlePlay}
           onPause={handlePause}
           onEnded={handleEnded}
           onError={() => setHasError(true)}
-          // @ts-expect-error react-player types extend HTMLVideoElement; onProgress actually receives { playedSeconds }
-          onProgress={handleProgress}
+          onTimeUpdate={handleEmbeddedTimeUpdate}
           onSeeked={handleSeeked}
         />
       )}
