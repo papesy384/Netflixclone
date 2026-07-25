@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MOCK_MOVIES } from "@/lib/mock-movies";
 import MovieCard from "./components/MovieCard";
+import YouTubePartyForm from "./components/YouTubePartyForm";
 
 export default function Home() {
   return (
@@ -41,8 +42,9 @@ export default function Home() {
           Watch together in sync. Free. Invite anyone with a link.
         </p>
         <p className="mt-3 text-xs text-white/70 sm:text-sm">
-          Ready to watch? Pick your favorite movie, start a watch party and invite your friends.
+          Paste a YouTube link below, or pick a movie and invite your friends.
         </p>
+        <YouTubePartyForm />
       </section>
 
       {/* Trending Now - one row */}

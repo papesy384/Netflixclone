@@ -1,4 +1,14 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# The Social Sofa
+
+Watch-party Netflix clone — synced playback, chat, and invite links.
+
+Live: https://netflixclone-pearl-eight.vercel.app/
+
+## Browser extension
+
+A Chrome/Firefox companion lives in [`extension/`](./extension/). See [extension/README.md](./extension/README.md) for load/test steps.
+
+Mobile: install the site as a **PWA** (Add to Home Screen) — no extension required.
 
 ## Getting Started
 

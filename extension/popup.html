@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Social Sofa</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img src="icons/icon48.png" alt="" width="28" height="28" />
+      <div>
+        <h1>The Social Sofa</h1>
+        <p class="tagline">Watch together in sync</p>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="card highlight" id="youtube-section" hidden>
+        <div class="section-title">YouTube</div>
+        <p id="youtube-hint" class="hint">Watch this video together</p>
+        <button type="button" id="btn-youtube" class="btn btn-primary">
+          Watch this together
+        </button>
+      </section>
+
+      <section class="card">
+        <button type="button" id="btn-start" class="btn btn-primary">
+          Start Watch Party
+        </button>
+        <button type="button" id="btn-browse" class="btn btn-secondary">
+          Browse movies
+        </button>
+      </section>
+
+      <section class="card">
+        <label class="label" for="join-input">Join or start from a link</label>
+        <div class="row">
+          <input
+            id="join-input"
+            type="text"
+            placeholder="Invite link, room ID, or YouTube URL"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" id="btn-join" class="btn btn-secondary">
+            Go
+          </button>
+        </div>
+        <p id="join-error" class="error" hidden></p>
+      </section>
+
+      <section class="card" id="last-room-section" hidden>
+        <div class="section-title">Last room</div>
+        <p id="last-room-id" class="mono"></p>
+        <div class="row">
+          <button type="button" id="btn-reopen" class="btn btn-secondary">
+            Reopen
+          </button>
+          <button type="button" id="btn-copy" class="btn btn-ghost">
+            Copy invite
+          </button>
+        </div>
+        <p id="copy-status" class="status" hidden></p>
+      </section>
+
+      <section class="card muted" id="active-tab-section" hidden>
+        <div class="section-title">This tab</div>
+        <p id="active-tab-hint" class="hint"></p>
+        <button type="button" id="btn-copy-active" class="btn btn-ghost">
+          Copy this invite
+        </button>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span id="plan-badge">Free</span>
+      <a id="open-app" href="#" target="_blank" rel="noopener">Open app</a>
+    </footer>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
