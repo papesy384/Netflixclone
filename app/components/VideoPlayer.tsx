@@ -8,12 +8,12 @@ import { parseYouTubeVideoId } from "@/lib/youtube";
 const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 
 const BROADCAST_EVENT = "playback";
-
-type RoomState = {
-  is_playing: boolean;
-  last_timestamp: number;
-  host_id: string | null;
-};
+/** Only force-seek when a guest is this many seconds off the host. */
+const DRIFT_THRESHOLD_SEC = 2;
+/** YouTube seeks are heavier — allow a bit more drift before correcting. */
+const YOUTUBE_DRIFT_THRESHOLD_SEC = 2.5;
+/** How often the host shares their position (guests correct only if drifted). */
+const HEARTBEAT_MS = 8000;
 
 type VideoPlayerProps = {
   roomId: string;
@@ -32,7 +32,14 @@ function getOrCreateClientId(): string {
 }
 
 function isDirectVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|ogg|m3u8)(\?|$)/i.test(url) || url.includes("commondatastorage.googleapis.com");
+  return (
+    /\.(mp4|webm|ogg|m3u8)(\?|$)/i.test(url) ||
+    url.includes("commondatastorage.googleapis.com")
+  );
+}
+
+function isYouTubeUrl(url: string): boolean {
+  return Boolean(parseYouTubeVideoId(url));
 }
 
 export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayerProps) {
@@ -41,66 +48,99 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const clientIdRef = useRef<string>("");
   const currentTimeRef = useRef(0);
   const isHostRef = useRef(false);
+  const isPlayingRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const channelRef = useRef<any>(null);
-  const roomsChannelRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const suppressUntilRef = useRef(0);
+  const lastBroadcastAtRef = useRef(0);
 
   const [effectiveUrl, setEffectiveUrl] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHost, setIsHost] = useState(false);
-  const [initialSyncDone, setInitialSyncDone] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomReady, setRoomReady] = useState(false);
   const [needsUserClickToPlay, setNeedsUserClickToPlay] = useState(false);
   const pendingSeekRef = useRef<number | null>(null);
-  const isRemoteUpdateRef = useRef(false);
 
-  const safeSeek = useCallback((seconds: number) => {
+  const suppressRemoteEcho = useCallback((ms = 900) => {
+    suppressUntilRef.current = Date.now() + ms;
+  }, []);
+
+  const isSuppressed = useCallback(() => Date.now() < suppressUntilRef.current, []);
+
+  const safeSeek = useCallback((seconds: number, force = false) => {
     const player = playerRef.current;
     if (!player) {
       pendingSeekRef.current = seconds;
       return;
     }
+
+    const local = currentTimeRef.current;
+    const drift = Math.abs(local - seconds);
+    const threshold = isYouTubeUrl(effectiveUrl)
+      ? YOUTUBE_DRIFT_THRESHOLD_SEC
+      : DRIFT_THRESHOLD_SEC;
+
+    // Skip tiny corrections — these are what make playback feel jumpy
+    if (!force && drift < threshold) {
+      return;
+    }
+
+    suppressRemoteEcho(1200);
     if (typeof player.seekTo === "function") {
       player.seekTo(seconds, "seconds");
     } else if (typeof (player as HTMLVideoElement).currentTime !== "undefined") {
       (player as HTMLVideoElement).currentTime = seconds;
     } else {
       pendingSeekRef.current = seconds;
+      return;
     }
-  }, []);
+    currentTimeRef.current = seconds;
+  }, [effectiveUrl, suppressRemoteEcho]);
 
-  const syncFromRoom = useCallback(
-    (state: RoomState) => {
-      setIsPlaying(state.is_playing);
-      currentTimeRef.current = state.last_timestamp;
-      pendingSeekRef.current = state.last_timestamp;
-      safeSeek(state.last_timestamp);
+  const applyRemoteState = useCallback(
+    (state: { is_playing?: boolean; last_timestamp?: number }, opts?: { forceSeek?: boolean }) => {
+      if (typeof state.is_playing === "boolean" && state.is_playing !== isPlayingRef.current) {
+        suppressRemoteEcho(900);
+        isPlayingRef.current = state.is_playing;
+        setIsPlaying(state.is_playing);
+      }
+      if (typeof state.last_timestamp === "number") {
+        safeSeek(state.last_timestamp, opts?.forceSeek ?? false);
+      }
     },
-    [safeSeek]
+    [safeSeek, suppressRemoteEcho]
   );
 
   const broadcastPlayback = useCallback(
-    async (is_playing: boolean, last_timestamp: number) => {
+    async (is_playing: boolean, last_timestamp: number, opts?: { persist?: boolean }) => {
       if (!supabase) return;
       const channel = channelRef.current;
       if (!channel) return;
 
-      await supabase
-        .from("rooms")
-        .update({ is_playing, last_timestamp })
-        .eq("id", roomId);
+      // Throttle noisy heartbeats a bit
+      const now = Date.now();
+      if (now - lastBroadcastAtRef.current < 400) return;
+      lastBroadcastAtRef.current = now;
 
-      const payload = {
-        is_playing,
-        last_timestamp,
-        client_id: clientIdRef.current,
-      };
+      const persist = opts?.persist !== false;
+      if (persist) {
+        // Fire-and-forget DB write — don't block the broadcast (smoother UX)
+        void supabase
+          .from("rooms")
+          .update({ is_playing, last_timestamp })
+          .eq("id", roomId);
+      }
+
       channel.send({
         type: "broadcast",
         event: BROADCAST_EVENT,
-        payload,
+        payload: {
+          is_playing,
+          last_timestamp,
+          client_id: clientIdRef.current,
+        },
       });
     },
     [roomId]
@@ -115,20 +155,24 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     setHasError(false);
   }, [url]);
 
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
   // Sync isPlaying to native video element (broadcast from friend -> play on your device)
   useEffect(() => {
     const el = playerRef.current;
     if (!el || !isDirectVideoUrl(effectiveUrl)) return;
     const video = el as HTMLVideoElement;
     if (isPlaying) {
-      video.play()
+      video
+        .play()
         .then(() => setNeedsUserClickToPlay(false))
         .catch(() => {
           video.muted = true;
-          video.play()
-            .then(() => {
-              setNeedsUserClickToPlay(false);
-            })
+          video
+            .play()
+            .then(() => setNeedsUserClickToPlay(false))
             .catch(() => setNeedsUserClickToPlay(true));
         });
     } else {
@@ -137,18 +181,21 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
     }
   }, [isPlaying, effectiveUrl]);
 
-  // Drift management: broadcast current position every 5s when playing (PRD)
+  // Host heartbeat: share position; guests only seek if they drifted past the threshold
   useEffect(() => {
     if (!isPlaying || !isHostRef.current) return;
     const interval = setInterval(() => {
-      if (isRemoteUpdateRef.current) return;
+      if (isSuppressed()) return;
       const t = currentTimeRef.current;
-      if (t > 0) broadcastPlayback(true, t);
-    }, 5000);
+      if (t >= 0) {
+        // Heartbeats don't need a DB write every tick — broadcast is enough for live sync
+        void broadcastPlayback(true, t, { persist: false });
+      }
+    }, HEARTBEAT_MS);
     return () => clearInterval(interval);
-  }, [isPlaying, broadcastPlayback]);
+  }, [isPlaying, broadcastPlayback, isSuppressed]);
 
-  // Fetch room state and subscribe to broadcast (runs in background, never blocks video)
+  // Fetch room state + realtime broadcast (primary sync path)
   useEffect(() => {
     const client = supabase;
     if (!client) {
@@ -175,9 +222,10 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
         return;
       }
 
-      let isHost = false;
+      let host = false;
       const videoIdFromUrl = parseYouTubeVideoId(url);
-      const videoIdOrUrl = videoIdFromUrl ?? url; // Store full URL for direct videos
+      const videoIdOrUrl = videoIdFromUrl ?? url;
+
       if (!room) {
         const { error: insertError } = await client.from("rooms").insert({
           id: roomId,
@@ -186,14 +234,17 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           last_timestamp: 0,
           host_id: clientId,
         });
-        if (!insertError) isHost = true;
+        if (!insertError) host = true;
       } else {
-        if (room.host_id === clientId) isHost = true;
-        syncFromRoom({
-          is_playing: room.is_playing ?? false,
-          last_timestamp: room.last_timestamp ?? 0,
-          host_id: room.host_id,
-        });
+        if (room.host_id === clientId) host = true;
+
+        // Initial join: snap hard to host position once
+        isPlayingRef.current = room.is_playing ?? false;
+        setIsPlaying(room.is_playing ?? false);
+        currentTimeRef.current = room.last_timestamp ?? 0;
+        pendingSeekRef.current = room.last_timestamp ?? 0;
+        safeSeek(room.last_timestamp ?? 0, true);
+
         const roomVideoId = (room as { video_id?: string }).video_id;
         if (roomVideoId) {
           const ytId = parseYouTubeVideoId(roomVideoId);
@@ -204,58 +255,41 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
               : `https://www.youtube.com/watch?v=${roomVideoId}`;
           setEffectiveUrl(resolvedUrl);
         } else {
-          await client
-            .from("rooms")
-            .update({ video_id: videoIdOrUrl })
-            .eq("id", roomId);
+          await client.from("rooms").update({ video_id: videoIdOrUrl }).eq("id", roomId);
         }
       }
-      isHostRef.current = isHost;
-      setIsHost(isHost);
+
+      isHostRef.current = host;
+      setIsHost(host);
 
       const channel = client.channel(`room:${roomId}`);
       channelRef.current = channel;
 
       channel
-        .on("broadcast", { event: BROADCAST_EVENT }, (payload: { payload?: Record<string, unknown>; [key: string]: unknown }) => {
-            if (!mounted) return;
-            const data = (payload.payload ?? payload) as { is_playing?: boolean; last_timestamp?: number; client_id?: string };
-            const is_playing = data?.is_playing;
-            const last_timestamp = data?.last_timestamp ?? 0;
-            const client_id = data?.client_id;
-            if (client_id === clientId) return;
-            isRemoteUpdateRef.current = true;
-            if (is_playing !== undefined) setIsPlaying(is_playing);
-            currentTimeRef.current = last_timestamp;
-            safeSeek(last_timestamp);
-            setTimeout(() => { isRemoteUpdateRef.current = false; }, 500);
-          }
-        )
-        .subscribe((status) => {
-          if (status === "SUBSCRIBED" && !mounted) return;
-        });
-
-      const roomsChannel = client
-        .channel(`rooms-changes:${roomId}`)
         .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
-          (payload) => {
+          "broadcast",
+          { event: BROADCAST_EVENT },
+          (payload: { payload?: Record<string, unknown>; [key: string]: unknown }) => {
             if (!mounted) return;
-            const newRow = payload.new as { is_playing?: boolean; last_timestamp?: number };
-            if (newRow?.is_playing !== undefined || newRow?.last_timestamp !== undefined) {
-              isRemoteUpdateRef.current = true;
-              if (newRow.is_playing !== undefined) setIsPlaying(newRow.is_playing);
-              if (newRow.last_timestamp !== undefined) {
-                currentTimeRef.current = newRow.last_timestamp;
-                safeSeek(newRow.last_timestamp);
-              }
-              setTimeout(() => { isRemoteUpdateRef.current = false; }, 500);
-            }
+            const data = (payload.payload ?? payload) as {
+              is_playing?: boolean;
+              last_timestamp?: number;
+              client_id?: string;
+            };
+            if (data.client_id === clientId) return;
+            if (isHostRef.current) return; // host timeline is source of truth
+
+            applyRemoteState(
+              {
+                is_playing: data.is_playing,
+                last_timestamp: data.last_timestamp,
+              },
+              { forceSeek: false }
+            );
           }
         )
         .subscribe();
-      roomsChannelRef.current = roomsChannel;
+
       setRoomReady(true);
     };
 
@@ -265,49 +299,46 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       setRoomReady(false);
       channelRef.current?.unsubscribe();
       channelRef.current = null;
-      roomsChannelRef.current?.unsubscribe();
-      roomsChannelRef.current = null;
     };
-  }, [roomId, syncFromRoom, safeSeek, url]);
+  }, [roomId, safeSeek, applyRemoteState, url]);
 
   const handlePlay = useCallback(() => {
-    if (isRemoteUpdateRef.current) return;
+    if (isSuppressed()) return;
+    isPlayingRef.current = true;
     setIsPlaying(true);
-    if (initialSyncDone) {
-      const t = currentTimeRef.current;
-      broadcastPlayback(true, t);
+    if (isHostRef.current) {
+      void broadcastPlayback(true, currentTimeRef.current, { persist: true });
     }
-  }, [initialSyncDone, broadcastPlayback]);
+  }, [broadcastPlayback, isSuppressed]);
 
   const handlePause = useCallback(() => {
-    if (isRemoteUpdateRef.current) return;
+    if (isSuppressed()) return;
+    isPlayingRef.current = false;
     setIsPlaying(false);
-    if (initialSyncDone) {
-      const t = currentTimeRef.current;
-      broadcastPlayback(false, t);
+    if (isHostRef.current) {
+      void broadcastPlayback(false, currentTimeRef.current, { persist: true });
     }
-  }, [initialSyncDone, broadcastPlayback]);
+  }, [broadcastPlayback, isSuppressed]);
 
   const handleEnded = useCallback(() => {
-    if (isRemoteUpdateRef.current) return;
+    if (isSuppressed()) return;
+    isPlayingRef.current = false;
     setIsPlaying(false);
-    if (initialSyncDone) {
-      broadcastPlayback(false, currentTimeRef.current);
+    if (isHostRef.current) {
+      void broadcastPlayback(false, currentTimeRef.current, { persist: true });
     }
-  }, [initialSyncDone, broadcastPlayback]);
+  }, [broadcastPlayback, isSuppressed]);
 
   const handleSeeked = useCallback(() => {
-    if (isRemoteUpdateRef.current) return;
-    if (initialSyncDone) {
-      const t = currentTimeRef.current;
-      broadcastPlayback(isPlaying, t);
-    }
-  }, [initialSyncDone, isPlaying, broadcastPlayback]);
+    if (isSuppressed()) return;
+    if (!isHostRef.current) return;
+    void broadcastPlayback(isPlayingRef.current, currentTimeRef.current, { persist: true });
+  }, [broadcastPlayback, isSuppressed]);
 
   const handleReady = useCallback(() => {
     const pending = pendingSeekRef.current;
     if (pending !== null) {
-      safeSeek(pending);
+      safeSeek(pending, true);
       pendingSeekRef.current = null;
     }
   }, [safeSeek]);
@@ -322,10 +353,11 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
   const handleVideoCanPlay = useCallback(() => {
     const pending = pendingSeekRef.current;
     if (pending !== null && playerRef.current && "currentTime" in playerRef.current) {
+      suppressRemoteEcho(1200);
       (playerRef.current as HTMLVideoElement).currentTime = pending;
       pendingSeekRef.current = null;
     }
-  }, []);
+  }, [suppressRemoteEcho]);
 
   const handleUserClickToPlay = useCallback(() => {
     setNeedsUserClickToPlay(false);
@@ -370,6 +402,11 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
           </span>
         </button>
       )}
+      {isHost && roomReady && (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/60 px-2 py-1 text-[10px] text-white/80">
+          Host · sync on
+        </div>
+      )}
       {isDirectVideoUrl(effectiveUrl) ? (
         <video
           ref={playerRef as React.RefObject<HTMLVideoElement>}
@@ -390,7 +427,6 @@ export default function VideoPlayer({ roomId, url, className = "" }: VideoPlayer
       ) : (
         <ReactPlayer
           ref={playerRef}
-          // react-player v3 uses `src` (not the old `url` prop)
           src={effectiveUrl}
           width="100%"
           height="100%"
